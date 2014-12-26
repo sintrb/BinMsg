@@ -1,7 +1,7 @@
 package com.sin.java.comm.binmsg.test;
 
 import com.sin.java.comm.binmsg.BinMsg;
-import com.sin.java.comm.binmsg.stream.SeekableOutStream;
+import com.sin.java.comm.binmsg.stream.SeekableBuffedOutputStream;
 
 /**
  * 测试 <br/>
@@ -20,7 +20,7 @@ public class TestMain {
 	public static void main(String[] args) {
 		try {
 			// SeekableOutStream 测试
-			SeekableOutStream sos = new SeekableOutStream(2);
+			SeekableBuffedOutputStream sos = new SeekableBuffedOutputStream(2);
 			sos.write(1);
 			sos.write(1);
 			sos.write(1);
