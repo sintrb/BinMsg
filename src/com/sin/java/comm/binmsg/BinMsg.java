@@ -7,7 +7,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.sin.java.comm.binmsg.MsgField.FieldType;
-import com.sin.java.comm.binmsg.stream.SeekableOutStream;
+import com.sin.java.comm.binmsg.stream.SeekableBuffedOutputStream;
+import com.sin.java.comm.binmsg.stream.SeekableOutputStream;
 
 /**
  * Java的二进制消息序列化（反序列化）类库 <br/>
@@ -60,29 +61,22 @@ final public class BinMsg {
 			throw new IllegalArgumentException("unsupport type " + type);
 	}
 
-	/**
-	 * 将消息序列号为二进制数据
-	 * 
-	 * @param obj
-	 *            需要序列化的消息对象
-	 * @return 该消息的二进制数据
-	 */
-	public static byte[] msgToBin(Object obj) throws IOException, IllegalArgumentException, IllegalAccessException, SecurityException, NoSuchFieldException {
+	public static void writeToStream(SeekableOutputStream sos, Object obj) throws IOException, IllegalArgumentException, IllegalAccessException, SecurityException, NoSuchFieldException {
 		Class<?> clz = obj.getClass();
 		if (clz.isAnnotationPresent(MsgBody.class) == false)
 			throw new IllegalArgumentException(String.format("%s not a MsgBody Annotation class", clz));
 
-		SeekableOutStream seekableStream = new SeekableOutStream();
+		int offset = sos.getPosition();
 		for (Field f : clz.getFields()) {
 			MsgField afd = f.getAnnotation(MsgField.class);
 			if (afd != null) {
-				seekableStream.seek(afd.offset());
+				sos.seek(afd.offset() + offset);
 				FieldType type = afd.type();
 				switch (type) {
 				case BYTE:
 				case BIG16:
 				case LIT16: {
-					writeValueToSream(seekableStream, f.getInt(obj), afd.type());
+					writeValueToSream(sos, f.getInt(obj), afd.type());
 					break;
 				}
 				case BYTES:
@@ -95,7 +89,7 @@ final public class BinMsg {
 						if (len == 0 && dts != null)
 							len = dts.length;
 						for (int i = 0; i < len; ++i) {
-							writeValueToSream(seekableStream, dts[i], type);
+							writeValueToSream(sos, dts[i], type);
 						}
 					} else if (f.getType() == TYPE_SHORTS) {
 						// short[]
@@ -103,7 +97,7 @@ final public class BinMsg {
 						if (len == 0 && dts != null)
 							len = dts.length;
 						for (int i = 0; i < len; ++i) {
-							writeValueToSream(seekableStream, dts[i], type);
+							writeValueToSream(sos, dts[i], type);
 						}
 					} else if (f.getType() == TYPE_INTS) {
 						// int[]
@@ -111,7 +105,7 @@ final public class BinMsg {
 						if (len == 0 && dts != null)
 							len = dts.length;
 						for (int i = 0; i < len; ++i) {
-							writeValueToSream(seekableStream, dts[i], type);
+							writeValueToSream(sos, dts[i], type);
 						}
 					} else
 						throw new IllegalArgumentException("must use int[]/short[]/byte[] for 16bit[] field.");
@@ -122,8 +116,20 @@ final public class BinMsg {
 				}
 			}
 		}
-		byte[] dats = seekableStream.toByteArray();
-		seekableStream.close();
+	}
+
+	/**
+	 * 将消息序列号为二进制数据
+	 * 
+	 * @param obj
+	 *            需要序列化的消息对象
+	 * @return 该消息的二进制数据
+	 */
+	public static byte[] msgToBin(Object obj) throws IOException, IllegalArgumentException, IllegalAccessException, SecurityException, NoSuchFieldException {
+		SeekableBuffedOutputStream sbos = new SeekableBuffedOutputStream();
+		writeToStream(sbos, obj);
+		byte[] dats = sbos.toByteArray();
+		sbos.close();
 		return dats;
 	}
 
