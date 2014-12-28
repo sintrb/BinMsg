@@ -14,5 +14,10 @@ import java.lang.annotation.Target;
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 public @interface MsgBody {
+	public enum LayoutType {
+		Offset, // 偏移方式布局
+		Order, // 排序方式
+	}
 
+	public LayoutType type() default LayoutType.Offset; // 布局方式
 }
