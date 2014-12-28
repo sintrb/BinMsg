@@ -1,5 +1,7 @@
 package com.sin.java.comm.binmsg.test;
 
+import java.io.IOException;
+
 import com.sin.java.comm.binmsg.BinMsg;
 import com.sin.java.comm.binmsg.stream.SeekableBuffedOutputStream;
 
@@ -15,6 +17,14 @@ public class TestMain {
 			System.out.print(String.format("%02x ", b));
 		}
 		System.out.println();
+	}
+
+	public static void testBinMsg(Object msg) throws IllegalArgumentException, SecurityException, IOException, IllegalAccessException, NoSuchFieldException, InstantiationException {
+		byte[] dts = BinMsg.msgToBin(msg);
+		printByteArray(dts);
+
+		Object msg2 = BinMsg.binToMsg(dts, msg.getClass());
+		printByteArray(BinMsg.msgToBin(msg2));
 	}
 
 	public static void main(String[] args) {
@@ -38,16 +48,21 @@ public class TestMain {
 			msg.len1 = (byte) (msg.data1.length * 1);
 
 			msg.data2 = new short[] { 0x01, 0x02, 0x03, 0x04 };
-			msg.len2 = (short) (msg.data2.length * 1);
+			msg.len2 = (short) (msg.data2.length * 2);
 
-			msg.data3 = new int[] { 0x01, 0x02, 0x03, 0x04, 0x05 };
-			msg.len3 = (int) (msg.data3.length * 1);
+			msg.data3 = new int[] { 0x01, 0x02, 0x03, 0x04, 0x05, 0x01, 0x02, 0x03, 0x04, 0x05 };
+			msg.len3 = (int) (msg.data3.length * 2);
 
-			byte[] dts = BinMsg.msgToBin(msg);
-			printByteArray(dts);
+			testBinMsg(msg);
 
-			TMsg msg2 = BinMsg.binToMsg(dts, TMsg.class);
-			printByteArray(BinMsg.msgToBin(msg2));
+			TMAll<TM1> t2 = new TMAll<TM1>();
+			t2.m1 = new TM1();
+			t2.m1.m2 = new TM2();
+			t2.m2 = new TM2();
+			t2.m2.n1 = 0x30;
+			t2.m2.n2 = 0x31;
+			// printByteArray(BinMsg.msgToBin(t2));
+			testBinMsg(t2);
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
