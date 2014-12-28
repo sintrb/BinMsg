@@ -7,8 +7,13 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
+import com.sin.java.comm.binmsg.MsgBody.LayoutType;
 import com.sin.java.comm.binmsg.MsgField.FieldType;
 import com.sin.java.comm.binmsg.stream.SeekableBuffedOutputStream;
 import com.sin.java.comm.binmsg.stream.SeekableOutputStream;
@@ -67,61 +72,132 @@ final public class BinMsg {
 			throw new IllegalArgumentException("unsupport type " + type);
 	}
 
-	public static void writeToStream(SeekableOutputStream sos, Object obj) throws IOException, IllegalArgumentException, IllegalAccessException, SecurityException, NoSuchFieldException {
+	static class FieldComparator implements Comparator<Field> {
+		@Override
+		public int compare(Field f1, Field f2) {
+			MsgField af1 = f1.getAnnotation(MsgField.class);
+			MsgField af2 = f2.getAnnotation(MsgField.class);
+			return af1.offset() - af2.offset();
+		}
+	}
+
+	private static FieldComparator fieldComparator = new FieldComparator();
+	private static Map<Class<?>, List<Field>> clzSortedField = new HashMap<Class<?>, List<Field>>();
+
+	private static int typeSize(MsgField afd) {
+		if (afd.sizeunit() == 0) {
+			switch (afd.type()) {
+			case BIG16:
+			case BIG16S:
+			case LIT16:
+			case LIT16S:
+				return 2;
+
+			case BYTE:
+			case BYTES:
+				return 1;
+			default:
+				break;
+			}
+			return 1;
+		} else {
+			return afd.sizeunit();
+		}
+	}
+
+	private static void writeFieldToStream(SeekableOutputStream sos, Object obj, Field f) throws IllegalArgumentException, IOException, IllegalAccessException, SecurityException, NoSuchFieldException {
+		MsgField afd = f.getAnnotation(MsgField.class);
+		FieldType type = afd.type();
+		switch (type) {
+		case BYTE:
+		case BIG16:
+		case LIT16: {
+			writeValueToSream(sos, f.getInt(obj), afd.type());
+			break;
+		}
+		case BYTES:
+		case BIG16S:
+		case LIT16S: {
+			int len = getFieldSize(obj, afd) / typeSize(afd);
+			if (f.getType() == TYPE_BYTES) {
+				// byte[]
+				byte[] dts = (byte[]) f.get(obj);
+				if (len == 0 && dts != null)
+					len = dts.length;
+				for (int i = 0; i < len; ++i) {
+					writeValueToSream(sos, dts[i], type);
+				}
+			} else if (f.getType() == TYPE_SHORTS) {
+				// short[]
+				short[] dts = (short[]) f.get(obj);
+				if (len == 0 && dts != null)
+					len = dts.length;
+				for (int i = 0; i < len; ++i) {
+					writeValueToSream(sos, dts[i], type);
+				}
+			} else if (f.getType() == TYPE_INTS) {
+				// int[]
+				int[] dts = (int[]) f.get(obj);
+				if (len == 0 && dts != null)
+					len = dts.length;
+				for (int i = 0; i < len; ++i) {
+					writeValueToSream(sos, dts[i], type);
+				}
+			} else
+				throw new IllegalArgumentException("must use int[]/short[]/byte[] for 16bit[] field.");
+			break;
+		}
+		case MESSAGE: {
+			writeToStream(sos, f.get(obj));
+			break;
+		}
+		default:
+			throw new IllegalArgumentException("unsupport type " + afd.type());
+		}
+	}
+
+	public static void writeToStreamByOrder(SeekableOutputStream sos, Object obj) throws IOException, IllegalArgumentException, IllegalAccessException, SecurityException, NoSuchFieldException {
 		Class<?> clz = obj.getClass();
-		if (clz.isAnnotationPresent(MsgBody.class) == false)
-			throw new IllegalArgumentException(String.format("%s not a MsgBody Annotation class", clz));
+
+		if (!clzSortedField.containsKey(clz)) {
+			List<Field> fields = new ArrayList<Field>();
+			for (Field f : clz.getFields()) {
+				MsgField afd = f.getAnnotation(MsgField.class);
+				if (afd != null) {
+					fields.add(f);
+				}
+			}
+			Collections.sort(fields, fieldComparator);
+			clzSortedField.put(clz, fields);
+		}
+		List<Field> fields = clzSortedField.get(clz);
+		for (Field f : fields) {
+			writeFieldToStream(sos, obj, f);
+		}
+	}
+
+	public static void writeToStreamByOffset(SeekableOutputStream sos, Object obj) throws IOException, IllegalArgumentException, IllegalAccessException, SecurityException, NoSuchFieldException {
+		Class<?> clz = obj.getClass();
 
 		int offset = sos.getPosition();
 		for (Field f : clz.getFields()) {
 			MsgField afd = f.getAnnotation(MsgField.class);
 			if (afd != null) {
 				sos.seek(afd.offset() + offset);
-				FieldType type = afd.type();
-				switch (type) {
-				case BYTE:
-				case BIG16:
-				case LIT16: {
-					writeValueToSream(sos, f.getInt(obj), afd.type());
-					break;
-				}
-				case BYTES:
-				case BIG16S:
-				case LIT16S: {
-					int len = getFieldSize(obj, afd) / afd.sizeunit();
-					if (f.getType() == TYPE_BYTES) {
-						// byte[]
-						byte[] dts = (byte[]) f.get(obj);
-						if (len == 0 && dts != null)
-							len = dts.length;
-						for (int i = 0; i < len; ++i) {
-							writeValueToSream(sos, dts[i], type);
-						}
-					} else if (f.getType() == TYPE_SHORTS) {
-						// short[]
-						short[] dts = (short[]) f.get(obj);
-						if (len == 0 && dts != null)
-							len = dts.length;
-						for (int i = 0; i < len; ++i) {
-							writeValueToSream(sos, dts[i], type);
-						}
-					} else if (f.getType() == TYPE_INTS) {
-						// int[]
-						int[] dts = (int[]) f.get(obj);
-						if (len == 0 && dts != null)
-							len = dts.length;
-						for (int i = 0; i < len; ++i) {
-							writeValueToSream(sos, dts[i], type);
-						}
-					} else
-						throw new IllegalArgumentException("must use int[]/short[]/byte[] for 16bit[] field.");
-					break;
-				}
-				default:
-					throw new IllegalArgumentException("unsupport type " + afd.type());
-				}
+				writeFieldToStream(sos, obj, f);
 			}
 		}
+	}
+
+	public static void writeToStream(SeekableOutputStream sos, Object obj) throws IOException, IllegalArgumentException, IllegalAccessException, SecurityException, NoSuchFieldException {
+		Class<?> clz = obj.getClass();
+		MsgBody body = clz.getAnnotation(MsgBody.class);
+		if (body == null)
+			throw new IllegalArgumentException(String.format("%s not a MsgBody Annotation class", clz));
+		if (body.type() == LayoutType.Offset)
+			writeToStreamByOffset(sos, obj);
+		else
+			writeToStreamByOrder(sos, obj);
 	}
 
 	/**
@@ -175,14 +251,13 @@ final public class BinMsg {
 	 * @param f
 	 *            字段
 	 */
-	private static <T> void deArrayField(byte[] data, int offset, T obj, Field f) throws SecurityException, NoSuchFieldException, IllegalArgumentException, IllegalAccessException {
+	private static <T> int deArrayField(byte[] data, int offset, T obj, Field f) throws SecurityException, NoSuchFieldException, IllegalArgumentException, IllegalAccessException {
 		MsgField afd = f.getAnnotation(MsgField.class);
 		int size = afd.size();
 		if (size == 0) {
 			size = getFieldSize(obj, afd);
 		}
-		int count = size / afd.sizeunit();
-		offset += afd.offset();
+		int count = size / typeSize(afd);
 		byte[] bts = null;
 		short[] sts = null;
 		int[] its = null;
@@ -208,6 +283,90 @@ final public class BinMsg {
 				its[i] = (int) readValFromBuffer(data, offset, i, type);
 			}
 		}
+		return count * typeSize(afd) + offset;
+	}
+
+	private static int setValFromBuffer(Object obj, byte[] data, int offset, Field f) throws SecurityException, IllegalArgumentException, NoSuchFieldException, IllegalAccessException, InstantiationException {
+		MsgField afd = f.getAnnotation(MsgField.class);
+		FieldType type = afd.type();
+
+		// System.err.println(String.format("read %s at %d", f.getName(),
+		// offset));
+		int ofs = 0;
+		switch (type) {
+		case BYTE:
+			ofs -= 1;
+		case BIG16:
+		case LIT16: {
+			ofs += 2;
+
+			if (f.getType() == TYPE_BYTE) {
+				f.setByte(obj, (byte) readValFromBuffer(data, offset, 0, type));
+			} else if (f.getType() == TYPE_SHORT) {
+				f.setShort(obj, (short) readValFromBuffer(data, offset, 0, type));
+			} else if (f.getType() == TYPE_INT) {
+				f.setInt(obj, readValFromBuffer(data, offset, 0, type));
+			} else
+				throw new IllegalArgumentException("must use int/short/byte for single field: " + f.getName());
+			offset += ofs;
+			break;
+		}
+		case BYTES:
+		case BIG16S:
+		case LIT16S: {
+			offset = deArrayField(data, offset, obj, f);
+			break;
+		}
+		case MESSAGE: {
+			Object nobj = f.getType().newInstance();
+			offset = initObjFromBuffer(nobj, data, offset);
+			f.set(obj, nobj);
+			break;
+		}
+		default:
+			throw new IllegalArgumentException("unsupport type " + afd.type());
+		}
+		return offset;
+	}
+
+	public static int initObjFromBuffer(Object obj, byte[] data, int offset) throws InstantiationException, IllegalAccessException, SecurityException, IllegalArgumentException, NoSuchFieldException {
+		Class<?> clz = obj.getClass();
+		MsgBody body = clz.getAnnotation(MsgBody.class);
+		if (body == null)
+			throw new IllegalArgumentException(String.format("%s not a MsgBody Annotation class", clz));
+		if (!clzSortedField.containsKey(clz)) {
+			List<Field> fields = new ArrayList<Field>();
+			for (Field f : clz.getFields()) {
+				MsgField afd = f.getAnnotation(MsgField.class);
+				if (afd != null) {
+					fields.add(f);
+				}
+			}
+			Collections.sort(fields, fieldComparator);
+			clzSortedField.put(clz, fields);
+		}
+		List<Field> fields = clzSortedField.get(clz);
+		if (body.type() == LayoutType.Offset)
+			return binToMsgByOffset(obj, data, offset, clz, fields);
+		else
+			return binToMsgByOrder(obj, data, offset, clz, fields);
+	}
+
+	public static int binToMsgByOffset(Object obj, byte[] data, int offset, Class<?> clz, List<Field> fields) throws InstantiationException, IllegalAccessException, SecurityException, IllegalArgumentException, NoSuchFieldException {
+		int noffset = offset;
+		for (Field f : fields) {
+			MsgField afd = f.getAnnotation(MsgField.class);
+			noffset = offset + afd.offset();
+			setValFromBuffer(obj, data, noffset, f);
+		}
+		return noffset;
+	}
+
+	public static int binToMsgByOrder(Object obj, byte[] data, int offset, Class<?> clz, List<Field> fields) throws InstantiationException, IllegalAccessException, SecurityException, IllegalArgumentException, NoSuchFieldException {
+		for (Field f : fields) {
+			offset = setValFromBuffer(obj, data, offset, f);
+		}
+		return offset;
 	}
 
 	/**
@@ -222,46 +381,11 @@ final public class BinMsg {
 	 * @return clz类型的对象
 	 */
 	public static <T> T binToMsg(byte[] data, int offset, Class<T> clz) throws InstantiationException, IllegalAccessException, SecurityException, IllegalArgumentException, NoSuchFieldException {
-		if (clz.isAnnotationPresent(MsgBody.class) == false)
+		MsgBody body = clz.getAnnotation(MsgBody.class);
+		if (body == null)
 			throw new IllegalArgumentException(String.format("%s not a MsgBody Annotation class", clz));
-
 		T obj = clz.newInstance();
-		int datalen = data.length - offset;
-		List<Field> arrfields = new ArrayList<Field>();
-		for (Field f : obj.getClass().getFields()) {
-			MsgField afd = f.getAnnotation(MsgField.class);
-			if (afd != null) {
-				if (afd.offset() > datalen)
-					throw new IllegalArgumentException("数据不足");
-				FieldType type = afd.type();
-				switch (type) {
-				case BYTE:
-				case BIG16:
-				case LIT16: {
-					if (f.getType() == TYPE_BYTE)
-						f.setByte(obj, (byte) readValFromBuffer(data, offset + afd.offset(), 0, type));
-					else if (f.getType() == TYPE_SHORT)
-						f.setShort(obj, (short) readValFromBuffer(data, offset + afd.offset(), 0, type));
-					else if (f.getType() == TYPE_INT)
-						f.setInt(obj, readValFromBuffer(data, offset + afd.offset(), 0, type));
-					else
-						throw new IllegalArgumentException("must use int/short/byte for single field: " + f.getName());
-					break;
-				}
-				case BYTES:
-				case BIG16S:
-				case LIT16S: {
-					arrfields.add(f);
-					break;
-				}
-				default:
-					throw new IllegalArgumentException("unsupport type " + afd.type());
-				}
-			}
-		}
-		for (Field f : arrfields) {
-			deArrayField(data, offset, obj, f);
-		}
+		initObjFromBuffer(obj, data, offset);
 		return obj;
 	}
 
