@@ -12,6 +12,6 @@ public class MB03Res {
 	public byte func;
 	@MsgField(offset = 2, type = FieldType.BYTE)
 	public int size;
-	@MsgField(offset = 3, type = FieldType.BIG16S, sizedepend = "size", sizeunit = 2)
+	@MsgField(offset = 3, type = FieldType.BIG16S, sizedepend = "size")
 	public short[] values;
 }
