@@ -23,9 +23,11 @@ public @interface MsgField {
 
 		LIT16, // 小端16位数据
 		LIT16S, // 小端16位数据数组
+
+		MESSAGE, // 消息对象
 	}
 
-	public int offset(); // 位置偏移
+	public int offset(); // 字段位置偏移，当使用Order布局模式的时候该值为排序依据（越小越靠前）
 
 	public FieldType type(); // 字段数据类型
 
@@ -33,5 +35,5 @@ public @interface MsgField {
 
 	public String sizedepend() default ""; // 数据长度依赖字段
 
-	public int sizeunit() default 1; // 单个数据的字节数，size/sizeunit为数组数据个数
+	public int sizeunit() default 0; // 单个数据的字节数，size/sizeunit为数组数据个数，默认值为0（自动）
 }
